@@ -1,0 +1,228 @@
+<!DOCTYPE html>
+<html lang="pt-BR"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>ELYNDRA — v0.4</title>
+<style>
+:root{box-sizing:border-box;color-scheme:dark;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+html,body{margin:0;height:100%;background:#0a0910;overflow:hidden}
+body{display:flex;align-items:center;justify-content:center;font-family:system-ui,sans-serif}
+canvas{width:100%;max-height:100%;aspect-ratio:16/9;touch-action:none;background:#000;image-rendering:pixelated}
+#hint{display:none;position:fixed;top:calc(env(safe-area-inset-top,0px) + 6px);left:0;right:0;text-align:center;color:#b9a8d8;font-size:13px;pointer-events:none}
+@media (orientation:portrait){#hint{display:block}}
+</style></head><body>
+<div id="hint">Gire o celular para jogar na horizontal</div>
+<canvas id="c" width="480" height="270"></canvas>
+<script>
+const cv=document.getElementById('c'),g=cv.getContext('2d'),W=480,H=270;
+const FONT='13px ui-monospace,Menlo,Consolas,monospace';
+let S='title',T=0,K={},ptr=null,P0=null,tap=false,drag={x:0,y:0},D=null,saved=null;
+const F={pts:0,evil:false,jordana:false};
+const COL={Floris:'#ffd84a',Jordana:'#9fd7ff','Narração':'#a99ec4'};
+try{saved=JSON.parse(localStorage.getItem('elyndra_save'))}catch(e){}
+function save(stage){saved={v:1,stage};try{localStorage.setItem('elyndra_save',JSON.stringify(saved))}catch(e){}}
+function rng(s){return()=>{s|=0;s=s+0x6D2B79F5|0;let t=Math.imul(s^s>>>15,1|s);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296}}
+const AC=window.AudioContext?new AudioContext():null;
+function beep(f,d=.05,v=.035){try{if(!AC)return;const o=AC.createOscillator(),a=AC.createGain();o.type='square';o.frequency.value=f;a.gain.value=v;o.connect(a);a.connect(AC.destination);o.start();o.stop(AC.currentTime+d)}catch(e){}}
+const vib=n=>{try{navigator.vibrate&&navigator.vibrate(n)}catch(e){}};
+function pos(e){const r=cv.getBoundingClientRect();return{x:(e.clientX-r.left)*W/r.width,y:(e.clientY-r.top)*H/r.height}}
+cv.addEventListener('pointerdown',e=>{try{AC&&AC.resume()}catch(_){}ptr=pos(e);P0={...ptr};tap=true;try{cv.setPointerCapture(e.pointerId)}catch(_){}});
+cv.addEventListener('pointermove',e=>{if(!ptr)return;const p=pos(e);drag.x+=p.x-ptr.x;drag.y+=p.y-ptr.y;ptr=p});
+['pointerup','pointercancel'].forEach(n=>cv.addEventListener(n,()=>{ptr=null;P0=null}));
+addEventListener('keydown',e=>{K[e.key.toLowerCase()]=1;if(e.key===' '||e.key==='Enter'||e.key.toLowerCase()==='e')tap=true});
+addEventListener('keyup',e=>{K[e.key.toLowerCase()]=0});
+function dirKeys(){return{x:(K.arrowright||K.d?1:0)-(K.arrowleft||K.a?1:0),y:(K.arrowdown||K.s?1:0)-(K.arrowup||K.w?1:0)}}
+function inRect(p,x,y,w,h){return p&&p.x>=x&&p.x<=x+w&&p.y>=y&&p.y<=y+h}
+/* ---------- texto ---------- */
+function tx(t,x,y,c='#fff',sz=13,al='left'){g.font=sz+'px ui-monospace,Menlo,Consolas,monospace';g.fillStyle=c;g.textAlign=al;g.textBaseline='alphabetic';g.fillText(t,x,y)}
+function wl(t,w){const r=[];let l='';for(const wd of t.split(' ')){const tr=l?l+' '+wd:wd;if(g.measureText(tr).width>w&&l){r.push(l);l=wd}else l=tr}r.push(l);return r}
+function wr(t,x,y,w,lh,n,c='#e8e2f5'){g.font=FONT;g.fillStyle=c;g.textAlign='left';let k=n;for(const l of wl(t,w)){if(k<=0)break;g.fillText(l.slice(0,k),x,y);k-=l.length+1;y+=lh}}
+function box(x,y,w,h,c='#fff'){g.fillStyle='#07060c';g.fillRect(x,y,w,h);g.strokeStyle=c;g.lineWidth=2;g.strokeRect(x+1,y+1,w-2,h-2)}
+/* ---------- diálogo ---------- */
+function say(l,cb){D={l,i:0,n:0,cb}}
+function dlg(dt){if(!D)return false;const L=D.l[D.i][1];const old=D.n|0;D.n=Math.min(L.length,D.n+dt*28);if((D.n|0)!==old&&(D.n|0)%3===0)beep(D.l[D.i][0]==='Floris'?520:300,.02,.015);
+ if(tap){if(D.n<L.length)D.n=L.length;else{D.i++;D.n=0;if(D.i>=D.l.length){const cb=D.cb;D=null;cb&&cb()}}}return true}
+function dbox(){if(!D)return;const[s,t]=D.l[D.i];box(10,188,460,76,COL[s]||'#fff');tx(s,22,208,COL[s]||'#fff');wr(t,22,228,436,17,D.n|0);if(D.n>=t.length)tx('▼',452,256,'#888')}
+/* ---------- personagens ---------- */
+function floris(x,y,s=1,a=1){g.globalAlpha=a;g.fillStyle='#2f7a3c';g.fillRect(x-2*s,y+10*s,4*s,26*s);g.fillRect(x-14*s,y+22*s,12*s,4*s);g.fillRect(x+2*s,y+28*s,12*s,4*s);
+ g.fillStyle=F.evil?'#ff9a3c':'#ffd84a';for(let i=0;i<8;i++){const an=i*Math.PI/4;g.beginPath();g.arc(x+Math.cos(an)*13*s,y+Math.sin(an)*13*s,7*s,0,7);g.fill()}
+ g.fillStyle='#f2b84b';g.beginPath();g.arc(x,y,10*s,0,7);g.fill();g.fillStyle=F.evil?'#b3001b':'#2b1b0e';g.fillRect(x-5*s,y-4*s,3*s,4*s);g.fillRect(x+2*s,y-4*s,3*s,4*s);
+ if(F.evil){g.fillStyle='#fff';g.fillRect(x-6*s,y+3*s,12*s,3*s)}else g.fillRect(x-4*s,y+3*s,8*s,2*s);g.globalAlpha=1}
+function child(x,y){g.fillStyle='#5a4fa8';g.fillRect(x,y+4,10,8);g.fillStyle='#f1c9a0';g.fillRect(x+1,y,8,6);g.fillStyle='#2a1c14';g.fillRect(x+1,y,8,2)}
+function jordana(x,y,a=1){g.globalAlpha=a;g.fillStyle='#1b1830';g.fillRect(x-9,y+10,18,34);g.fillStyle='#9fd7ff';g.fillRect(x-9,y+10,18,3);g.fillStyle='#d9d2ea';g.fillRect(x-6,y-4,12,14);g.fillStyle='#9fd7ff';g.fillRect(x-4,y+1,3,2);g.fillRect(x+1,y+1,3,2);g.globalAlpha=1}
+/* ---------- título ---------- */
+const stars=Array.from({length:50},(_,i)=>[(i*97)%480,(i*53)%270,i%3+1]);
+function menuItems(){return saved?['Novo jogo','Continuar']:['Novo jogo']}
+function updTitle(){if(tap){const m=menuItems();m.forEach((n,i)=>{if(inRect(ptr,170,152+i*36,140,30)){beep(440);if(n==='Novo jogo'){Object.assign(F,{pts:0,evil:false,jordana:false});startPro()}else if(saved.stage==='fim2'){S='end2';T=0}else if(saved.stage==='fim'||saved.stage==='cap1')startC1();else if(saved.stage==='cap2')startC2();else startExplore()}})}}
+function drawTitle(){g.fillStyle='#0a0910';g.fillRect(0,0,W,H);for(const[x,y,s]of stars){g.fillStyle=(T*2+x)%7<1?'#fff':'#6a5fa0';g.fillRect(x,y,s,s)}
+ tx('ELYNDRA',W/2,92,'#d9c8ff',46,'center');tx('v0.4 — Prólogo e Capítulos 1-2',W/2,118,'#8d80b3',13,'center');
+ menuItems().forEach((n,i)=>{box(170,152+i*36,140,30,'#8d80b3');tx(n,240,172+i*36,'#fff',14,'center')});
+ tx('Toque numa opção para começar',W/2,252,'#6c6290',11,'center')}
+/* ---------- prólogo ---------- */
+const PRO=['Há muito tempo, humanos e monstros lutaram.','Dizem que os humanos venceram. Dizem que os monstros foram esquecidos.','Dizem que uma barreira foi criada para proteger o mundo.','Ninguém concorda sobre quem ela protegia.','Uma criança olhou para o céu e viu uma estrela desaparecer.','Hoje, perto de uma fenda...','O chão cede.'];
+let pi=0,pt=0;
+function startPro(){S='pro';pi=0;pt=0}
+function updPro(dt){pt+=dt;if(tap&&pt>1.2){pi++;pt=0;beep(260,.05);if(pi>=PRO.length)startExplore()}}
+function drawPro(){g.fillStyle='#000';g.fillRect(0,0,W,H);const a=Math.min(1,pt*.8);g.globalAlpha=a;
+ if(pi===4){g.fillStyle='#fff';g.fillRect(300+(pt*6),60+pt*4,2,2)}
+ if(pi===6){g.fillStyle='#2a1c14';g.fillRect(0,180+pt*60,W,90)}
+ g.globalAlpha=a;wr(PRO[pi],70,130,340,20,999,'#d9d2ea');g.globalAlpha=1;tx('toque para continuar',W/2,255,'#4d4570',11,'center')}
+/* ---------- exploração ---------- */
+const WALLS=[[0,0,480,28],[0,242,480,28],[0,0,24,270],[456,0,24,270],[120,90,40,70],[260,150,50,30],[380,60,36,60],[200,40,30,30]];
+const pl={x:50,y:200};let pts=[],fl={x:330,y:110},ex={t:0};
+function hit(x,y){for(const[a,b,w,h]of WALLS)if(x<a+w&&x+10>a&&y<b+h&&y+10>b)return true;return false}
+function startExplore(){S='explore';pl.x=50;pl.y=200;pts=[[100,60],[220,200],[400,200]].filter((_,i)=>i>=F.pts);F.pts=Math.min(F.pts,3);ex.t=0;save('raiz');
+ say([['Narração','Você desperta entre raízes antigas. O silêncio pesa.'],['Floris','Olá, olá! Que susto! Eu sou Floris, a flor mais amigável de Elyndra.'],['Floris','Eu ensino a sobreviver aqui. Toque nas partículas de luz: são pontos de amizade!'],['Narração','Arraste o dedo na tela (ou use WASD / setas) para andar.']])}
+function updExplore(dt){ex.t+=dt;if(dlg(dt))return;let d=dirKeys();if(ptr&&P0){const dx=ptr.x-P0.x,dy=ptr.y-P0.y,m=Math.hypot(dx,dy);if(m>8){d={x:dx/m,y:dy/m}}}
+ const sp=58*dt;if(!hit(pl.x+d.x*sp,pl.y))pl.x+=d.x*sp;if(!hit(pl.x,pl.y+d.y*sp))pl.y+=d.y*sp;
+ for(let i=pts.length-1;i>=0;i--){if(Math.hypot(pts[i][0]-pl.x-5,pts[i][1]-pl.y-5)<12){pts.splice(i,1);F.pts++;beep(880,.1);
+  if(F.pts<3)say([['Floris',F.pts===1?'Isso! Continue assim!':'Quase lá! Mais um!']]);
+  else say([['Floris','Muito bem... pontos de amizade. Todos para mim.'],['Floris','Sabe o que é engraçado? Almas não precisam de dono. Mas eu preciso da sua.']],()=>{F.evil=true;startBattle()})}}}
+function drawExplore(){g.fillStyle='#10201a';g.fillRect(0,0,W,H);g.fillStyle='#16291f';for(let i=0;i<60;i++)g.fillRect((i*83)%480,(i*47)%270,6,2);
+ for(const[a,b,w,h]of WALLS){g.fillStyle='#3a2a1d';g.fillRect(a,b,w,h);g.fillStyle='#5a4230';g.fillRect(a,b,w,3)}
+ for(const[x,y]of pts){g.fillStyle='rgba(255,240,150,'+(.6+.4*Math.sin(T*5))+')';g.beginPath();g.arc(x,y,4,0,7);g.fill()}
+ floris(fl.x,fl.y,1);child(pl.x,pl.y);
+ if(ex.t<3){g.globalAlpha=Math.min(1,3-ex.t);tx('RAIZ VELHA',W/2,60,'#d9c8ff',22,'center');g.globalAlpha=1}
+ tx('Pontos de amizade: '+F.pts+'/3',12,262,'#ffe98a',11);
+ if(ptr&&P0&&!D){g.strokeStyle='rgba(255,255,255,.3)';g.lineWidth=2;g.beginPath();g.arc(P0.x,P0.y,24,0,7);g.stroke();g.fillStyle='rgba(255,255,255,.4)';g.beginPath();g.arc(P0.x+Math.max(-24,Math.min(24,ptr.x-P0.x)),P0.y+Math.max(-24,Math.min(24,ptr.y-P0.y)),9,0,7);g.fill()}
+ dbox()}
+/* ---------- combate ---------- */
+const A={x:170,y:96,w:140,h:84};let B=null;
+const ACTS=[['Lutar','Você não tem arma. Só Determinação, e ela não basta.'],['Agir','Você tenta conversar. Floris sorri com dentes demais.'],['Defender','Você se encolhe e se prepara. O próximo golpe dói menos.'],['Fugir','As raízes fecham o caminho. Não há para onde fugir.']];
+const NEXT=['Pétalas caem como lâminas.','As raízes se contorcem sob seus pés.','Floris não sorri mais.'];
+function startBattle(q){S='battle';J=null;D=null;B={q:q===true,g:q==='g',hp:20,turn:0,ph:'menu',txt:'Floris bloqueia o caminho.',t:0,sh:false,bul:[],sx:0,sy:0,inv:0,n:0}}
+function startDodge(){const b=B;b.ph='dodge';b.t=0;b.sp=0;b.bul=[];b.n=0;b.sx=A.x+A.w/2;b.sy=A.y+A.h/2;b.r=rng(1000+b.turn)}
+function updBattle(dt){const b=B;
+ if(b.ph==='menu'){if(tap)ACTS.forEach((a,i)=>{if(inRect(ptr,10+i*118,222,110,36)){beep(500);b.txt=(b.q?QA:b.g?GA:ACTS)[i][1];if(i===1)b.agir=1;b.sh=i===2;b.ph='msg';b.t=0}})}
+ else if(b.ph==='msg'){b.t+=dt;if(b.t>3.2||(tap&&b.t>.8))startDodge()}
+ else if(b.ph==='dodge'){b.t+=dt;b.sp-=dt;b.inv-=dt;const k=dirKeys();b.sx+=k.x*90*dt+drag.x;b.sy+=k.y*90*dt+drag.y;
+  b.sx=Math.max(A.x+4,Math.min(A.x+A.w-4,b.sx));b.sy=Math.max(A.y+4,Math.min(A.y+A.h-4,b.sy));const p=b.turn%3,r=b.r;if(b.g)gs(b,p,r);if(b.q&&p<2)qs(b,p,r);
+  if(!b.q&&!b.g&&p===0&&b.sp<=0){b.sp=.42;b.bul.push({k:'b',x:A.x+r()*A.w,y:A.y-4,vx:(r()-.5)*30,vy:42+r()*18})}
+  if(!b.g&&(b.q?p===2:p===1)&&b.sp<=0){b.sp=1;const v=b.n++%2===0;b.bul.push(v?{k:'v',x:A.x+r()*(A.w-16),y:A.y,w:16,h:A.h,t:0}:{k:'v',x:A.x,y:A.y+r()*(A.h-14),w:A.w,h:14,t:0})}
+  if(!b.q&&!b.g&&p===2&&b.sp<=0){b.sp=1.3;const cx=A.x+r()*A.w,cy=A.y+10;for(let i=0;i<8;i++){const an=i*Math.PI/4+r()*.3;b.bul.push({k:'s',x:cx,y:cy,vx:Math.cos(an)*42,vy:Math.sin(an)*42})}}
+  for(let i=b.bul.length-1;i>=0;i--){const o=b.bul[i];let h=false;
+   if(o.k==='v'){o.t+=dt;if(o.t>1.3){b.bul.splice(i,1);continue}if(o.t>.8&&b.sx+3>o.x&&b.sx-3<o.x+o.w&&b.sy+3>o.y&&b.sy-3<o.y+o.h)h=true}
+   else{if(o.k==='m'){o.l-=dt;if(o.l<=0){b.bul.splice(i,1);continue}const dx=b.sx-o.x,dy=b.sy-o.y,m=Math.hypot(dx,dy)||1;o.vx+=dx/m*70*dt;o.vy+=dy/m*70*dt;const v=Math.hypot(o.vx,o.vy);if(v>36){o.vx*=36/v;o.vy*=36/v}}o.x+=o.vx*dt;o.y+=o.vy*dt;if(o.x<A.x-10||o.x>A.x+A.w+10||o.y<A.y-10||o.y>A.y+A.h+10){b.bul.splice(i,1);continue}if(Math.hypot(o.x-b.sx,o.y-b.sy)<6.5)h=true}
+   if(h&&b.inv<=0){b.hp-=b.sh?2:4;b.inv=1;beep(120,.15,.06);vib(40)}}
+  if(b.hp<=0){b.hp=0;b.ph='over';b.t=0}
+  else if(b.t>=7){b.turn++;if(b.turn>=3||b.hp<=6)(b.q?endQ():b.g?endG():startJord());else{b.ph='menu';b.txt=(b.q?NQ:b.g?NG:NEXT)[b.turn-1]||NEXT[2];b.sh=false}}}
+ else if(b.ph==='over'&&tap&&b.t++>0)startBattle(b.q?true:b.g?'g':0)}
+function drawBattle(){const b=B;g.fillStyle='#0b0a12';g.fillRect(0,0,W,H);
+ if(b.q)queen(240,48);else if(b.g)guard(240,48);else floris(240,48,1.4,J&&J.fa!==undefined?J.fa:1);
+ box(A.x-2,A.y-2,A.w+4,A.h+4);
+ if(b.ph==='menu'||b.ph==='msg'){wr(b.txt,A.x+8,A.y+22,A.w-16,16,999)}
+ if(b.ph==='dodge'||b.ph==='over'){for(const o of b.bul){if(o.k==='v'){if(o.t<.8){g.strokeStyle=Math.floor(o.t*10)%2?'#ff4d6d':'#7a2336';g.lineWidth=2;g.strokeRect(o.x,o.y,o.w,o.h)}else{g.fillStyle='#4fbf5f';g.fillRect(o.x,o.y,o.w,o.h)}}
+   else{g.fillStyle=o.k==='m'?'#b48cff':o.k==='b'?'#ff9ccb':'#c98b4a';g.beginPath();g.arc(o.x,o.y,3.5,0,7);g.fill()}}
+  if(b.ph==='dodge'&&(b.inv<=0||Math.floor(T*14)%2)){g.fillStyle='#ff2a4d';g.fillRect(b.sx-3,b.sy-3,6,6);g.fillRect(b.sx-1,b.sy-4,2,1)}}
+ g.fillStyle='#ffd84a';tx('HP',12,214,'#fff',12);g.fillStyle='#7a1a2a';g.fillRect(36,204,100,10);g.fillStyle='#ffd84a';g.fillRect(36,204,Math.max(0,b.hp)*5,10);tx(b.hp+' / 20',144,214,'#fff',12);
+ ACTS.forEach((a,i)=>{const on=b.ph==='menu';box(10+i*118,222,110,36,on?'#ffa94d':'#4a4258');tx(a[0],65+i*118,245,on?'#ffa94d':'#4a4258',14,'center')});
+ if(b.ph==='over'){g.fillStyle='rgba(0,0,0,.8)';g.fillRect(0,0,W,H);tx('Levante-se.',W/2,120,'#ff4d6d',26,'center');tx('Sua Determinação ainda não acabou.',W/2,148,'#d9d2ea',13,'center');tx('toque para tentar de novo',W/2,180,'#8d80b3',12,'center')}
+ if(D)dbox()}
+/* ---------- Jordana ---------- */
+let J=null;
+function startJord(){S='jord';J={t:0,fa:1,ja:0,flee:false,done:false};B.ph='x';F.jordana=true;
+ say([['Jordana','Já chega, Floris.'],['Floris','Você?! Não é possível...'],['Floris','Isso não termina aqui, criança. Eu volto.']],()=>{J.flee=true});}
+function updJord(dt){J.t+=dt;if(!J.flee)J.ja=Math.min(1,J.ja+dt);
+ if(J.flee&&!J.done){J.fa=Math.max(0,J.fa-dt*.5);if(J.fa<=0){J.done=true;
+  say([['Jordana','Você não deveria estar aqui. Precisa encontrar uma saída.'],['Jordana','Alguém precisa impedir que você morra antes de entender onde caiu.']],()=>{startC1()})}}
+ dlg(dt)}
+function drawJord(){drawBattle();const o=B;g.fillStyle='#0b0a12';g.fillRect(A.x-2,A.y-2,A.w+4,A.h+4);jordana(390,60,J.ja);dbox()}
+/* ---------- fim ---------- */
+function updEnd(){if(tap&&T>.6)startC2()}
+function drawEnd(){g.fillStyle='#0a0910';g.fillRect(0,0,W,H);tx('Fim do Prólogo',W/2,70,'#d9c8ff',24,'center');
+ wr('Você sobreviveu ao primeiro encontro e Jordana apareceu. O Capítulo 1 (Raiz Velha) ainda não foi feito: Tobias, puzzles e o Guardião da Raiz ficaram para depois. Seguimos para o Capítulo 2, com Jordana ao seu lado.',60,110,360,20,999,'#d9d2ea');
+ tx('Progresso salvo neste aparelho',W/2,215,'#8d80b3',12,'center');tx('toque para ir à Vila das Cinzas',W/2,245,'#6c6290',12,'center')}
+
+/* ---------- CAPÍTULO 2 — Vila das Cinzas ---------- */
+Object.assign(COL,{Tobias:'#e0b070','Guardião':'#7ed87a',Kael:'#ff7a5c',Cain:'#b9b9d0','Rainha':'#d58cff'});
+const QA=[['Lutar','Seus golpes atravessam uma ilusão.'],['Agir','Você pergunta o que ela teme. A máscara sorri.'],['Defender','Você se encolhe. Máscaras vigiam cada canto.'],['Fugir','Todas as saídas da praça são falsas.']];
+const NQ=['Os espelhos devolvem golpes que você não deu.','O cenário muda: a praça nunca foi real.'];
+function mkR(i,o,l=5){const L=i===0?[[0,0,24,270]]:[[0,0,24,100],[0,170,24,100]],Q=i===l?[[456,0,24,270]]:[[456,0,24,100],[456,170,24,100]];return[[0,0,480,28],[0,242,480,28],...L,...Q,...o]}
+let RW,RN,RB,NP,OB,LAST=5;
+const RW2=[mkR(0,[[120,60,40,40],[300,170,50,40]]),mkR(1,[[80,180,60,30],[200,50,30,60],[350,160,40,50]]),mkR(2,[[110,70,50,50],[300,60,60,40],[220,170,60,40]]),mkR(3,[[100,60,30,30],[100,180,30,30],[240,60,30,30],[240,180,30,30],[380,60,30,30],[380,180,30,30]]),mkR(4,[[150,40,60,50],[300,180,60,40]]),mkR(5,[[150,80,40,40],[380,150,40,60]])];
+const RN2=['ESTRADA DE CINZAS','CAMPO QUEIMADO','VILA DAS CINZAS','POMAR SECO','TRILHA DE CINZAS','MARCAS DE CONDENAÇÃO'],RB2=['#221a1a','#1f1816','#241816','#1d1a14','#1c1717','#1a1624'];
+const OB2={o0:'Uma placa queimada: VILA DAS CINZAS, a leste. Alguém riscou a palavra “bem-vindos”.',o1:'Uma cerca partida. O fogo passou por aqui há muito tempo, mas a terra ainda não aceitou nada.',o3:'Árvores secas em fileiras certinhas. Alguém cuidou deste pomar antes das cinzas.',o4:'Pegadas na terra, todas indo para o leste. Nenhuma voltando.'};
+const NP2=[[{x:70,y:200,id:'o0'}],[{x:280,y:200,id:'o1'}],[{n:'Vera',x:90,y:205,c:'#c98b6a',id:'v'},{n:'Dom',x:250,y:125,c:'#7a8aa0',id:'d'},{n:'Bento',x:380,y:205,c:'#6a8a5a',id:'b'},{n:'Kael',x:400,y:75,c:'#d9482f',id:'k'}],[{x:170,y:130,id:'o3'}],[{x:240,y:120,id:'o4'}],[{n:'Cain',x:300,y:130,c:'#8a8a99',id:'c'}]];
+const LN={v:[['Vera','Todo mundo culpa o Kael pelo incêndio. Mas eu vi a lamparina cair da casa do administrador.'],['Vera','Eu não disse nada na época. Tive medo.']],d:[['Dom','Me mandaram forjar a tranca do depósito para barrar os dracônicos. A ordem veio com o selo da Rainha.']],b:[['Bento','Dracônico perto do estoque? Só pode ser coisa dele.'],['Bento','...Os registros do incêndio foram assinados antes do fogo começar. Não conta que eu disse.']]};
+const CK=[[['Você','Ele não fez nada disso por ser dracônico.'],['Kael','...Ninguém nunca disse isso em voz alta aqui.']],[['Kael','Silêncio também é uma resposta.']],[['Você','Talvez seja melhor manter distância.'],['Kael','Pelo menos você disse isso na minha cara.'],['Narração','O dano foi feito: Kael agora olha para você como olha para o resto da vila.']]];
+const CAINL=[[['Cain','Quem escuta tem pouco. Mas é mais do que quase todos dão.'],['Cain','As ordens que você procura passam pela Rainha das Máscaras. Ela vem aí.']],[['Cain','Desconfie. É sensato. Ainda assim, ela vem aí, e não gosta de visitas.']],[['Cain','Informação tem preço. O meu: ninguém me chama de aliado.'],['Cain','A Rainha é a fonte das ordens. Ela vem aí.']]];
+RW=RW2;RN=RN2;RB=RB2;NP=NP2;OB=OB2;
+let C2={},CH=null;
+function hit2(x,y){for(const[a,b,w,h]of RW[C2.room])if(x<a+w&&x+10>a&&y<b+h&&y+10>b)return true;return false}
+function startC2(){S='c2';RW=RW2;RN=RN2;RB=RB2;NP=NP2;OB=OB2;LAST=5;C2={room:0,cl:{},k:-1,open:false,told:false,cain:false,ch:2};F.kael=-1;pl.x=50;pl.y=130;ex.t=0;save('cap2');
+ say([...(F.tobias?[['Tobias','Pelo menos esta estrada é mais calma que a passagem do Guardião.']]:[]),['Jordana','Precisamos de abrigo. Há uma vila a leste. Fique perto de mim.'],['Narração','Arraste o dedo na tela para andar. Perto de alguém ou de algo, aparece o botão Falar.']])}
+function ask(o,cb){S='choice';CH={o,cb}}
+function drawCh(){CH.o.forEach((t,i)=>{box(8+i*157,150,150,34,'#ffa94d');tx(t,83+i*157,172,'#ffa94d',12,'center')})}
+function updCh(){if(tap)CH.o.forEach((t,i)=>{if(inRect(ptr,8+i*157,150,150,34)){beep(500);S='c2';CH.cb(i)}})}
+function talk(id){if(id[0]==='o')return say([['Narração',OB[id]]]);if(C2.ch===1)return talk1(id);const n=Object.keys(C2.cl).length;
+ if(id==='v'||id==='d'||id==='b'){C2.cl[id]=1;const l=LN[id].slice();if(Object.keys(C2.cl).length===3&&n<3)l.push(['Jordana','Três histórias, uma só origem: alguém fabricou essas acusações. Fale com o Kael.']);say(l)}
+ else if(id==='k'){if(C2.k<0)say([['Kael','Não preciso da sua ajuda. Humanos só aparecem quando querem algo.'],['Narração','Moradores observam de longe. Alguns se afastam quando você chega perto de Kael.']],()=>ask(['Apoiar Kael','Ficar neutro','Concordar com a vila'],i=>{C2.k=i;F.kael=i;say(CK[i])}));
+  else if(n>=3&&!C2.told){C2.told=true;C2.open=true;say([['Kael','Tentei apagar o fogo do depósito. Quando acabou, só havia cinzas e o meu nome nas bocas.'],['Kael',C2.k===0?'Você ficou ao meu lado. Isso conta. Vamos descobrir quem assinou essas ordens.':'Se quer a verdade, a trilha leste leva às marcas de condenação. Alguém lá sabe quem assina essas ordens.'],['Narração','A passagem leste foi liberada.']])}
+  else say([['Kael',C2.told?'Siga a trilha leste.':'Fale com os outros. Depois decida se ainda quer falar comigo.']])}
+ else if(id==='c'){if(C2.cain)return say([['Cain','Não tenho mais nada a dizer.']]);
+  say([['Cain','Esta marca eu carrego há muito tempo. Sei por que foi dada. Não vou contar tudo.']],()=>ask(['Escutar','Desconfiar','Negociar'],i=>{F.cain=i;say(CAINL[i],()=>{C2.cain=true;say([['Rainha','Quanta gente barulhenta... e quanta verdade perigosa.'],['Jordana','Fique atrás de mim.'],['Rainha','Verdade? Aqui só existe o que a vila acredita.']],()=>startBattle(true))})}))}}
+function nearQ(){for(const q of NP[C2.room])if(Math.hypot(q.x-pl.x,q.y-pl.y)<30)return q;return null}
+function updC2(dt){ex.t+=dt;if(dlg(dt))return;let d=dirKeys();if(ptr&&P0){const dx=ptr.x-P0.x,dy=ptr.y-P0.y,m=Math.hypot(dx,dy);if(m>8)d={x:dx/m,y:dy/m}}
+ const sp=58*dt;if(!hit2(pl.x+d.x*sp,pl.y))pl.x+=d.x*sp;if(!hit2(pl.x,pl.y+d.y*sp))pl.y+=d.y*sp;
+ if(pl.x>466){const lk=C2.room===2&&!C2.open?(C2.ch===1?'Símbolos antigos selam a passagem.':'Ainda há o que descobrir na vila antes de seguir.'):C2.ch===1&&C2.room===1&&!F.tobias?'Tem alguém logo ali. Vale conversar antes de seguir.':null;if(lk){pl.x=440;say([['Jordana',lk]])}else if(C2.room<LAST){C2.room++;pl.x=30;ex.t=0}}
+ else if(pl.x<10&&C2.room>0){C2.room--;pl.x=440;ex.t=0}
+ const nq=nearQ();if(nq&&tap&&(inRect(ptr,388,196,84,38)||K[' ']||K.enter||K.e))talk(nq.id)}
+function drawC2(){const r=C2.room;g.fillStyle=RB[r];g.fillRect(0,0,W,H);const rr=rng(r*77+3);g.fillStyle=r===5?'#2a2238':'#33231f';for(let i=0;i<70;i++)g.fillRect(rr()*480,rr()*270,6,2);
+ g.fillStyle='#4a403c';for(let i=0;i<10;i++)g.fillRect(rr()*440+20,rr()*200+35,5,3);
+ for(const[a,b,w,h]of RW[r]){g.fillStyle=r===5?'#2b2438':'#3a2a2a';g.fillRect(a,b,w,h);g.fillStyle=r===5?'#4a3d66':'#5a4040';g.fillRect(a,b,w,3)}
+ for(const q of NP[r]){if(q.id[0]==='o'){g.fillStyle='#5a4230';g.fillRect(q.x,q.y,4,16);g.fillRect(q.x-5,q.y-4,14,8)}else{g.fillStyle=q.c;g.fillRect(q.x,q.y+4,10,10);g.fillStyle='#f1c9a0';g.fillRect(q.x+1,q.y-2,8,7);if(q.id==='k'){g.fillStyle='#ffb36b';g.fillRect(q.x,q.y-5,2,4);g.fillRect(q.x+8,q.y-5,2,4)}if(q.id==='c'){g.fillStyle='#b3001b';g.fillRect(q.x+3,q.y+7,4,4)}}}
+ jordana(pl.x-14,pl.y-24);if(F.tobias){g.fillStyle='#8a6a3a';g.fillRect(pl.x-32,pl.y-6,10,12);g.fillStyle='#f1c9a0';g.fillRect(pl.x-31,pl.y-12,8,7)}child(pl.x,pl.y);
+ g.fillStyle='rgba(200,190,180,.35)';for(let i=0;i<26;i++)g.fillRect((i*53+Math.sin(T+i)*14+480)%480,(T*14+i*41)%270,2,2);
+ if(ex.t<3.5){g.globalAlpha=Math.min(1,3.5-ex.t);tx(RN[r],W/2,60,'#d9c8ff',20,'center');g.globalAlpha=1}
+ if(r===2)tx('Pistas: '+Object.keys(C2.cl).length+'/3',12,262,'#ffe98a',11);
+ if(ptr&&P0&&!D&&S==='c2'){g.strokeStyle='rgba(255,255,255,.3)';g.lineWidth=2;g.beginPath();g.arc(P0.x,P0.y,24,0,7);g.stroke()}
+ const nq=nearQ();if(nq&&!D&&S==='c2'){box(388,196,84,38,'#ffa94d');tx(nq.id[0]==='o'?'Examinar':'Falar',430,220,'#ffa94d',13,'center')}
+ dbox()}
+function queen(x,y){g.fillStyle='#4a2a6a';g.fillRect(x-16,y+8,32,40);g.fillStyle='#d58cff';g.fillRect(x-16,y+8,32,4);g.fillStyle='#f2eefc';g.fillRect(x-10,y-12,20,22);g.fillStyle='#4a2a6a';g.fillRect(x-6,y-6,4,4);g.fillRect(x+2,y-6,4,4);g.fillRect(x-4,y+2,8,2)}
+function qs(b,p,r){if(b.sp>0)return;
+ if(p===0){b.sp=1.4;b.bul.push({k:'m',x:A.x+r()*A.w,y:A.y,vx:0,vy:20,l:5})}
+ else{b.sp=.8;const y=A.y+8+r()*(A.h-16);b.bul.push({k:'b',x:A.x,y,vx:52,vy:0},{k:'b',x:A.x+A.w,y:A.y+A.h-(y-A.y),vx:-52,vy:0})}}
+function endQ(){S='qend';B.ph='x';say([['Rainha','Quebrem minhas máscaras. A vila ainda vai acreditar no que prefere.'],['Jordana','Verdade e reputação não são a mesma coisa.'],['Kael',C2.k===2?'Vou com vocês. Mas não esqueci o que você disse na praça.':'Vou com vocês. Isso não quer dizer que perdoei esta vila.']],()=>{save('fim2');S='end2';T=0})}
+function updE2(){if(tap&&T>.6){S='title';T=0}}
+function drawE2(){g.fillStyle='#0a0910';g.fillRect(0,0,W,H);tx('Fim do Capítulo 2',W/2,70,'#d9c8ff',24,'center');
+ wr('Kael aceitou viajar com o grupo, sem perdoar a vila. A Rainha das Máscaras foi derrotada, mas não convencida. O Capítulo 3 (Cidade dos Espelhos) ainda não existe.',60,110,360,20,999,'#d9d2ea');tx('toque para voltar ao título',W/2,245,'#6c6290',12,'center')}
+
+/* ---------- CAPÍTULO 1 — Raiz Velha ---------- */
+const GA=[['Lutar','Você não tem arma. O Guardião não recua.'],['Agir','Você mostra as mãos vazias. As raízes hesitam.'],['Defender','Você se protege atrás de uma raiz caída.'],['Fugir','A passagem se fecha atrás de você.']];
+const NG=['Raízes cruzam a arena, uma depois da outra.','O Guardião respira fundo. As sementes tremem.'];
+const RW1=[mkR(0,[[120,70,40,40],[300,170,50,40]],4),mkR(1,[[110,70,50,50],[300,170,60,40]],4),mkR(2,[[100,60,30,30],[100,180,30,30],[360,60,30,30],[360,180,30,30]],4),mkR(3,[[200,40,30,60],[200,170,30,60],[330,100,40,40]],4),mkR(4,[[120,60,40,40],[120,170,40,40]],4)];
+const RN1=['RAIZ VELHA','ACAMPAMENTO DAS RAÍZES','PASSAGEM DAS RAÍZES','PONTE QUE NÃO EXISTE','CÂMARA DO GUARDIÃO'],RB1=['#13201a','#15211b','#12201c','#101a1a','#0f1a16'];
+const OB1={o0:'Uma raiz gigante rompe o chão. Entalhado nela: RAIZ VELHA. Há pegadas recentes.',o3:'No mapa de Jordana há uma ponte aqui. No chão, só o abismo. Jordana: “A região está perdendo seus caminhos.”'};
+const NP1=[[{x:70,y:200,id:'o0'}],[{n:'Mira',x:90,y:205,c:'#c9a06a',id:'m'},{n:'Joca',x:230,y:120,c:'#6a8aa0',id:'j'},{n:'Tobias',x:400,y:130,c:'#8a6a3a',id:'T'}],[{x:170,y:140,id:'p0'},{x:240,y:140,id:'p1'},{x:310,y:140,id:'p2'}],[{n:'Aro',x:120,y:130,c:'#9a9a9a',id:'a'},{x:400,y:200,id:'o3'}],[{n:'Guardião',x:300,y:120,c:'#4a6a3a',id:'g'}]];
+const PN=['flor','semente','broto'];
+function startC1(){S='c2';RW=RW1;RN=RN1;RB=RB1;NP=NP1;OB=OB1;LAST=4;C2={room:0,cl:{},k:-1,open:false,told:false,cain:false,ch:1,seq:[]};pl.x=50;pl.y=130;ex.t=0;save('cap1');
+ say([['Jordana','A Raiz Velha ainda lembra da guerra. Siga por perto.'],['Narração','Arraste o dedo para andar. Perto de alguém ou de algo, toque em Falar.']])}
+function talk1(id){
+ if(id==='m')say([['Mira','Humano?! Fique longe das crianças. Foi gente como você que trouxe a guerra.'],['Mira','...Mas você também é só uma criança.']]);
+ else if(id==='j')say([['Joca','Dizem que os humanos venceram. Eu não acredito nessa história. Tem buraco demais.'],['Joca','Meu avô dizia que a passagem abre na ordem da raiz: semente, depois broto, depois flor.']]);
+ else if(id==='T'){F.tobias=true;say([['Tobias','Ei! Essa passagem é perigosa. O Guardião não gosta de visitantes.'],['Jordana','Estamos só de passagem.'],['Tobias','Então eu vou com vocês. Alguém precisa garantir que ninguém se machuque.'],['Narração','Tobias entrou no grupo.']])}
+ else if(id[0]==='p'){const n=+id[1];C2.seq.push(n);beep(300+n*150,.15);
+  if(C2.seq.length<3)say([['Narração','A pedra da '+PN[n]+' brilha.']]);
+  else if(C2.seq.join()==='1,2,0'){C2.open=true;say([['Narração','As raízes se abrem devagar. O caminho leste está livre.']])}
+  else{C2.seq=[];say([['Narração','As pedras se apagam. A ordem estava errada.']])}}
+ else if(id==='a')say([['Aro','Eu tinha um irmão... como era o nome dele? Ontem eu sabia.'],['Jordana','O mundo está esquecendo as coisas.']]);
+ else if(id==='g')say([['Guardião','Humanos. A mesma destruição, de novo.'],['Jordana','Não viemos lutar.']],()=>startBattle('g'))}
+function vine(b,r,v){b.bul.push(v?{k:'v',x:A.x+r()*(A.w-16),y:A.y,w:16,h:A.h,t:0}:{k:'v',x:A.x,y:A.y+r()*(A.h-14),w:A.w,h:14,t:0})}
+function gs(b,p,r){if(b.sp>0)return;
+ if(p===0){b.sp=1.1;if(b.n++%2)b.bul.push({k:'b',x:A.x,y:A.y+8+r()*(A.h-16),vx:52,vy:0});else vine(b,r,b.n%4<2)}
+ else if(p===1){b.sp=1;if(b.n++%2){const cx=A.x+r()*A.w,cy=A.y+10;for(let i=0;i<8;i++){const an=i*Math.PI/4;b.bul.push({k:'s',x:cx,y:cy,vx:Math.cos(an)*42,vy:Math.sin(an)*42})}}else b.bul.push({k:'v',x:A.x+(b.n%5)*26,y:A.y,w:14,h:A.h,t:0})}
+ else{b.sp=1.6;const cx=A.x+A.w/2,cy=A.y+A.h/2,g0=r()*6.28;for(let i=0;i<14;i++){const an=i*6.28/14;if(Math.abs(Math.atan2(Math.sin(an-g0),Math.cos(an-g0)))<.45)continue;b.bul.push({k:'b',x:cx,y:cy,vx:Math.cos(an)*38,vy:Math.sin(an)*38})}}}
+function guard(x,y){g.fillStyle='#3a2a1d';g.fillRect(x-14,y-10,28,58);g.fillStyle='#2f7a3c';g.fillRect(x-24,y+4,12,4);g.fillRect(x+12,y+14,14,4);g.fillStyle='#7ed87a';g.fillRect(x-8,y,5,5);g.fillRect(x+3,y,5,5);g.fillStyle='#5a4230';g.fillRect(x-14,y-10,28,3)}
+function endG(){S='qend';B.ph='x';F.guardSpared=!!B.agir;
+ say(B.agir?[['Guardião','...Suas mãos estavam vazias o tempo todo.'],['Guardião','Passem. Mas não confio em vocês.']]:[['Guardião','Vocês venceram. Isso não prova nada.'],['Guardião','Passem, antes que eu mude de ideia.']],
+ ()=>say([['Narração','Na parede atrás dele, uma inscrição antiga se acende: “Quando o mundo esquecer seu próprio nome, a criança abrirá a última porta.”'],['Jordana','Frases velhas. Não significam nada.']],()=>startC2()))}
+/* ---------- loop ---------- */
+let last=performance.now();
+function frame(now){const dt=Math.min(.05,(now-last)/1000);last=now;T+=dt;
+ try{
+  if(S==='title')updTitle();else if(S==='pro')updPro(dt);else if(S==='explore')updExplore(dt);else if(S==='battle')updBattle(dt);else if(S==='jord')updJord(dt);else if(S==='end')updEnd();else if(S==='c2')updC2(dt);else if(S==='choice')updCh();else if(S==='qend')dlg(dt);else if(S==='end2')updE2();
+  if(S==='title')drawTitle();else if(S==='pro')drawPro();else if(S==='explore')drawExplore();else if(S==='battle')drawBattle();else if(S==='jord')drawJord();else if(S==='c2')drawC2();else if(S==='choice'){drawC2();drawCh()}else if(S==='qend')drawBattle();else if(S==='end2')drawE2();else drawEnd();
+ }catch(e){console.error(e)}
+ tap=false;drag.x=0;drag.y=0;requestAnimationFrame(frame)}
+requestAnimationFrame(frame);
+</script></body></html>
